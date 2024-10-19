@@ -1,9 +1,0 @@
-﻿  HelloTriangleApplication.cpp
-D:\LearnVulkan\VulkanDemo\FirstTriangle\HelloTriangleApplication.cpp(164,101): warning C4267: 'argument': conversion from 'size_t' to 'const uint32_t', possible loss of data
-D:\LearnVulkan\VulkanDemo\FirstTriangle\HelloTriangleApplication.cpp(168,67): warning C4267: 'argument': conversion from 'size_t' to 'const uint32_t', possible loss of data
-D:\LearnVulkan\VulkanDemo\FirstTriangle\HelloTriangleApplication.cpp(198,52): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
-D:\LearnVulkan\VulkanDemo\FirstTriangle\HelloTriangleApplication.cpp(237,21): warning C4018: '<': signed/unsigned mismatch
-D:\LearnVulkan\VulkanDemo\FirstTriangle\HelloTriangleApplication.cpp(266,20): warning C4018: '<': signed/unsigned mismatch
-D:\LearnVulkan\VulkanDemo\FirstTriangle\HelloTriangleApplication.cpp(269,21): warning C4018: '<': signed/unsigned mismatch
-D:\LearnVulkan\VulkanDemo\FirstTriangle\HelloTriangleApplication.cpp(613,1): warning C4715: 'HelloTriangleApplication::chooseSwapSurfaceFormat': not all control paths return a value
-  FirstTriangle.vcxproj -> D:\LearnVulkan\VulkanDemo\x64\Debug\FirstTriangle.exe
