@@ -97,6 +97,8 @@ void HelloTriangleApplication::initVulkan()
 	pickPhysicalDevice();
 	createLogicalDevice();
 	createSwapChain();
+	createImageViews();
+	createGraphicsPipeline();
 }
 
 void HelloTriangleApplication::mainLoop()
@@ -115,10 +117,15 @@ void HelloTriangleApplication::cleanup()
 	{
 		DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
 	}
-	vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+	
+
+	for (auto image_view : m_swapchain_image_views)
+	{
+		vkDestroyImageView(m_device, image_view, nullptr);
+	}
 	vkDestroySwapchainKHR(m_device, m_swap_chain, nullptr); //必须在logical device和instance之前delete
 	
-	
+	vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 	
 	vkDestroyDevice(m_device, nullptr);
 	vkDestroyInstance(m_instance, nullptr);//保证最后一个删除
@@ -597,7 +604,7 @@ void HelloTriangleApplication::createSwapChain()
 		throw std::runtime_error("failed to create swap chain!");
 	}
 
-	uint32_t image_count{ 0 };
+	image_count = 0 ;
 	vkGetSwapchainImagesKHR(m_device, m_swap_chain, &image_count, nullptr);
 	m_swapchain_images.resize(image_count);
 	vkGetSwapchainImagesKHR(m_device, m_swap_chain, &image_count, m_swapchain_images.data());
@@ -672,6 +679,41 @@ VkExtent2D HelloTriangleApplication::chooseSwapExtent(const VkSurfaceCapabilitie
 		actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 		return actualExtent;
 	}
+}
+
+void HelloTriangleApplication::createImageViews()
+{
+	m_swapchain_image_views.resize(m_swapchain_images.size());
+	for (size_t i = 0; i < m_swapchain_images.size(); i++)
+	{
+		VkImageViewCreateInfo info{};
+		memset(&info, 0, sizeof(info));
+		info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		info.image = m_swapchain_images[i];
+		info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		info.format = m_swapchain_image_format;
+
+		//可以swizzle
+		info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+		info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		info.subresourceRange.baseMipLevel = 0;
+		info.subresourceRange.levelCount = 1;
+		info.subresourceRange.baseArrayLayer = 0;
+		info.subresourceRange.layerCount = 1;
+
+		if (vkCreateImageView(m_device, &info, nullptr, &m_swapchain_image_views[i]) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create image views!");
+		}
+	}
+
+}
+
+void HelloTriangleApplication::createGraphicsPipeline()
+{
 }
 
 

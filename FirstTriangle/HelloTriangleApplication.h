@@ -42,17 +42,20 @@ struct SwapChainSupportDetails
 class HelloTriangleApplication
 {
 public:
-	HelloTriangleApplication() 
-		:m_window_size{ 600, 800 }, 
-		m_window(nullptr, [](void*) {}), 
-		m_instance{}, 
+	HelloTriangleApplication()
+		:m_window_size{ 600, 800 },
+		m_window(nullptr, [](void*) {}),
+		m_instance{},
 		m_debugMessenger(nullptr),
 		m_physicalDevice(VK_NULL_HANDLE),
 		m_device(VK_NULL_HANDLE),
 		m_graphicsQueue(VK_NULL_HANDLE),
 		m_presentQueue(VK_NULL_HANDLE),
 		m_surface(VK_NULL_HANDLE),
-		m_swap_chain{VK_NULL_HANDLE} {}
+		m_swap_chain{ VK_NULL_HANDLE },
+		m_swapchain_image_format(VkFormat::VK_FORMAT_UNDEFINED),
+		m_swapchain_image_extent{ 0,0 },
+		m_swapchain_image_views{} {}
 	~HelloTriangleApplication() = default;
 	HelloTriangleApplication(const HelloTriangleApplication&) = delete;
 	HelloTriangleApplication& operator=(const HelloTriangleApplication&) = delete;
@@ -117,6 +120,8 @@ private:
 	VkFormat m_swapchain_image_format;
 	VkExtent2D m_swapchain_image_extent;
 
+
+	std::vector<VkImageView> m_swapchain_image_views;
 private:
 	/*设置正确的swap chain设置
 	主要包含三个方面：
@@ -128,8 +133,11 @@ private:
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-
+	void createImageViews();
 	
+
+	void createGraphicsPipeline();
+
 
 };
 

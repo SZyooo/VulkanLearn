@@ -31,4 +31,8 @@
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="vert.glsl" />
+    <None Include="frag.glsl" />
+  </ItemGroup>
 </Project>
