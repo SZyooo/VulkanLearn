@@ -149,6 +149,7 @@
     <ClInclude Include="winconfig.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="compile_shader.bat" />
     <None Include="frag.glsl" />
     <None Include="vert.glsl" />
   </ItemGroup>

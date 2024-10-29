@@ -53,6 +53,7 @@ public:
 		m_presentQueue(VK_NULL_HANDLE),
 		m_surface(VK_NULL_HANDLE),
 		m_swap_chain{ VK_NULL_HANDLE },
+		m_pipeline_layout{VK_NULL_HANDLE},
 		m_swapchain_image_format(VkFormat::VK_FORMAT_UNDEFINED),
 		m_swapchain_image_extent{ 0,0 },
 		m_swapchain_image_views{} {}
@@ -122,6 +123,9 @@ private:
 
 
 	std::vector<VkImageView> m_swapchain_image_views;
+
+	VkPipelineLayout m_pipeline_layout;
+
 private:
 	/*设置正确的swap chain设置
 	主要包含三个方面：
@@ -135,9 +139,10 @@ private:
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 	void createImageViews();
 	
-
+	void createRenderPass();
 	void createGraphicsPipeline();
 
+	VkShaderModule createShaderModule(const std::vector<char>& code);
 
 };
 

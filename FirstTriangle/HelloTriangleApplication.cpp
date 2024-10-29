@@ -6,6 +6,23 @@
 #include <limits>
 #include <algorithm>
 
+#include <fstream>
+
+static std::vector<char> readShader(const std::string& filename)
+{
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+	if (!file.is_open())
+	{
+		throw std::runtime_error(std::string("failed to open file'") + filename + "'");
+	}
+	size_t file_size = (size_t)file.tellg();
+	std::vector<char> buffer(file_size);
+	file.seekg(0);
+	file.read(buffer.data(), file_size);
+	file.close();
+	return buffer;
+}
+
 
 static const std::vector<const char*> arr_validation_layers{
 	"VK_LAYER_KHRONOS_validation"
@@ -98,6 +115,7 @@ void HelloTriangleApplication::initVulkan()
 	createLogicalDevice();
 	createSwapChain();
 	createImageViews();
+	createRenderPass();
 	createGraphicsPipeline();
 }
 
@@ -126,7 +144,9 @@ void HelloTriangleApplication::cleanup()
 	vkDestroySwapchainKHR(m_device, m_swap_chain, nullptr); //必须在logical device和instance之前delete
 	
 	vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
-	
+
+	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
+
 	vkDestroyDevice(m_device, nullptr);
 	vkDestroyInstance(m_instance, nullptr);//保证最后一个删除
 
@@ -712,8 +732,270 @@ void HelloTriangleApplication::createImageViews()
 
 }
 
+void HelloTriangleApplication::createRenderPass()
+{
+	//attachment description
+	VkAttachmentDescription color_attachement{};
+	color_attachement.format = m_swapchain_image_format;
+	color_attachement.samples = VK_SAMPLE_COUNT_1_BIT;
+	/*
+	* 这两个参数指定了渲染到附件前的操作以及渲染到附件之后的操作
+	* LOAD_OP——
+	* VK_ATTACHMENT_LOAD_OP_LOAD: 保存attachment内部的内容
+	* VK_ATTACHMENT_LOAD_OP_CLEAR: 清除attachment内部的内容
+	* VK_ATTACHMENT_LOAD_OP_DONT_CARE: 已经存在的内容是未定义的。
+	* 
+	* STORE OP——
+	* VK_ATTACHMENT_STORE_OP_STORE: 被渲染的内容将会被保存在内存中并且稍后可以被读出
+	* VK_ATTACHMENT_STORE_OP_DONT_CARE: 渲染结束之后附件的内容是未定义的
+	*/
+	color_attachement.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	color_attachement.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+	color_attachement.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	color_attachement.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+	/*
+	*texture和framebuffer在Vulkan中是用VkImage对象来管理的，内部有一定的pixel format。
+	*但是，内存中像素数据的布局可以根据使用这个image的目的来改变。
+	* 一些常见的layout有：
+	* VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:按照作为颜色附件最优的布局来存储像素
+	* VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:按照image将在swap chain中被输出的最优布局来存储像素数据
+	* VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: 这个image是被作为内存拷贝的目标来设计像素布局的
+	* 
+	* 这里有一个很重要的点：image需要按照使用目标来转变为最合适的像素存储布局。
+	* 
+	* initialLayout是image在render pass前的布局。使用VK_IMAGE_LAYOUT_UNDEFINED来表明我们不关心
+	* finalLayout是render pass结束的时候使用的布局。因为我们想要将这个attachment作为swap chain的
+	* 图像，因此这里采用了VK_IMAGE_LAYOUT_PRESENT_SRC_KHR布局
+	*/
+	color_attachement.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	color_attachement.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+}
+
 void HelloTriangleApplication::createGraphicsPipeline()
 {
+	std::vector<char> vert_shader_code = readShader("vert.spv");
+	std::vector<char> frag_shader_code = readShader("frag.spv");
+	VkShaderModule vert_shader_module = createShaderModule(vert_shader_code);
+	VkShaderModule frag_shader_module = createShaderModule(frag_shader_code);
+	VkPipelineShaderStageCreateInfo vert_shader_stage_create_info{};
+	memset(&vert_shader_stage_create_info, 0, sizeof(VkPipelineShaderStageCreateInfo));
+	vert_shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vert_shader_stage_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vert_shader_stage_create_info.module = vert_shader_module;
+	vert_shader_stage_create_info.pName = "main";//entry point
+
+	/*
+	通过pName可知：我们可以在一个单独的ShaderModule中指定不同的entry point来使其执行不同的功能
+	SPIR-V允许我们通过配置一些在Shader Module中使用的常量来让其执行不同的功能，这样比在渲染的时候
+	设置变量来配置更加有效，例如编译器可以将基于这些常量的if语句删掉。
+	如果没有任何这种全局的constants，就将pSpecializationInfo置为nullptr
+	*/
+	vert_shader_stage_create_info.pSpecializationInfo = nullptr;
+	
+	VkPipelineShaderStageCreateInfo frag_shader_stage_create_info{};
+	frag_shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	frag_shader_stage_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	frag_shader_stage_create_info.module = frag_shader_module;
+	frag_shader_stage_create_info.pName = "main";
+
+	VkPipelineShaderStageCreateInfo shader_create_infos[] =
+	{ vert_shader_stage_create_info, frag_shader_stage_create_info };
+
+	/*
+	大多数的管线状态都需要在创建管线的时候指定好，创建完毕之后就无法在动态更改这些状态。
+	但是也有一些管线状态可以在渲染的时候动态的改变而无需重新创建管线。这些状态包括：
+	（1）viewport大小
+	（2）线的宽度
+	（3）blend常量
+	 ...
+	这些状态被称为"动态状态"（dynamic state）
+	不过如果想要使用这些dynamic states，我们需要这样添加——
+	*/
+	std::vector<VkDynamicState> dynamic_states = {
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_SCISSOR,
+	};
+	VkPipelineDynamicStateCreateInfo dynamic_state_create_info{};
+	memset(&dynamic_state_create_info, 0, sizeof(VkPipelineDynamicStateCreateInfo));
+	dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamic_state_create_info.dynamicStateCount = dynamic_states.size();
+	dynamic_state_create_info.pDynamicStates = dynamic_states.data();
+
+
+	//绑定顶点属性
+	VkPipelineVertexInputStateCreateInfo vertex_input_create_info{};
+	memset(&vertex_input_create_info, 0, sizeof(vertex_input_create_info));
+	vertex_input_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertex_input_create_info.vertexBindingDescriptionCount = 0;
+	vertex_input_create_info.pVertexBindingDescriptions = nullptr;
+	vertex_input_create_info.vertexAttributeDescriptionCount = 0;
+	vertex_input_create_info.pVertexAttributeDescriptions = nullptr;
+
+
+	
+	/*
+	设置绘制图元
+	一共有以下几种图元——
+	VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
+	VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+	VK_PRIMITIVE_TOPOLOGY_LINE_STRIP,
+	VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+	VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+	*/
+	VkPipelineInputAssemblyStateCreateInfo input_assembly{};
+	memset(&input_assembly, 0, sizeof(input_assembly));
+	input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	//如果将这个设置为true，那么在XX_STRIP的绘制中可以用0xFFFF或者0xFFFFFFFF特殊的index来打断strip
+	input_assembly.primitiveRestartEnable = VK_FALSE;
+
+
+	/*
+	viewport & scissor
+	viewport和scissor既可以设置为管线的静态属性又可以设置为管线的动态属性。通常而言设置为动态属性不会有多大的性能惩罚。
+	*/
+	VkViewport viewport{};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = (float)m_swapchain_image_extent.width;
+	viewport.height = (float)m_swapchain_image_extent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	VkRect2D scissor{};
+	scissor.offset = { 0,0 };
+	scissor.extent = m_swapchain_image_extent;
+
+	VkPipelineViewportStateCreateInfo viewport_state_create_info{};
+	memset(&viewport_state_create_info, 0, sizeof(VkPipelineViewportStateCreateInfo));
+	viewport_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewport_state_create_info.viewportCount = 1;
+	viewport_state_create_info.scissorCount = 1;
+	/*如果设置了这两个成员，那么viewport和scissor属性就成了静态属性*/
+	/*注意两个成员都是指针，这是因为在一些显卡上可以使用多个viewport和scissor。这需要在逻辑设备创建的时候激活相关的GPU特性*/
+	//viewport_state_create_info.pViewports = &viewport;
+	//viewport_state_create_info.pScissors = &scissor;
+
+
+	/*
+	Rasterizer阶段
+	这个阶段拿到由顶点组成的geometry，将它转化为片元，由片元着色器来负责着色。
+	同时这个阶段也会执行深度测试，面剔除以及裁剪测试（scissor test）
+	这个阶段也可以配置输出的片元是填满整个多边形还是只是边缘（wireframe rendering）
+	*/
+	VkPipelineRasterizationStateCreateInfo rasterizer_create_info{};
+	memset(&rasterizer_create_info, 0, sizeof(VkPipelineRasterizationStateCreateInfo));
+	//如果将这个选项设置为true，那么在near-plane、far-plane之外的片元都会被clamp到这两个平面，而不是丢弃
+	//激活这个属性需要激活GPU特性
+	rasterizer_create_info.depthClampEnable = VK_FALSE;
+	//打开这个属性意味着rasterizer会将所有的输出都丢弃；geometry永远都无法通过rasterizer stage
+	rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
+	/*
+	这个属性配置了片元输出模式
+	VK_POLYGON_MODE_FILL:polygon的所有区域都进行输出
+	VK_POLYGON_MODE_LINE:只有polygon的边沿才会输出，wireframe
+	VK_POLYGON_MODE_POINT:只有polygon的顶点会输出
+	使用除了fill模式之外的其他的模式都需要创建逻辑设备的时候激活相关的GPU feature
+	*/
+	rasterizer_create_info.polygonMode = VK_POLYGON_MODE_FILL;
+	//决定了线输出的fragment数量，即线的粗细。
+	//任何大于1的线粗都需要激活GPU的wideLines feature
+	rasterizer_create_info.lineWidth = 1.0f;
+	//下面两个参数指定了cull mode以及如何判断front face
+	rasterizer_create_info.cullMode = VK_CULL_MODE_BACK_BIT;//还可以不cull或者cull front
+	rasterizer_create_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	//rasterizer可以给depth值添加一个常量， 或者根据片元的slope来偏移depth value
+	rasterizer_create_info.depthBiasEnable = VK_FALSE;
+	rasterizer_create_info.depthBiasConstantFactor = 0.0f;
+	rasterizer_create_info.depthBiasClamp = 0.0f;
+	rasterizer_create_info.depthBiasSlopeFactor = 0.0f;
+
+	//multisampling
+	VkPipelineMultisampleStateCreateInfo multisampling_state_create_info{};
+	memset(&multisampling_state_create_info, 0, sizeof(VkPipelineMultisampleStateCreateInfo));
+	multisampling_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisampling_state_create_info.sampleShadingEnable = VK_FALSE;
+	multisampling_state_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	multisampling_state_create_info.minSampleShading = 1.0f;
+	multisampling_state_create_info.pSampleMask = nullptr;
+	multisampling_state_create_info.alphaToCoverageEnable = VK_FALSE;
+	multisampling_state_create_info.alphaToOneEnable = VK_FALSE;
+
+	//depth & stencil testing(暂时忽略）
+
+	//Color blending
+	VkPipelineColorBlendAttachmentState color_blend_attachment{};
+	memset(&color_blend_attachment, 0, sizeof(VkPipelineColorBlendAttachmentState));
+	color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+		| VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	color_blend_attachment.blendEnable = VK_FALSE; //暂时禁止blend
+	color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+	color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+	color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+	VkPipelineColorBlendStateCreateInfo color_blending_state_create_info{};
+	color_blending_state_create_info.sType =
+		VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	color_blending_state_create_info.logicOpEnable = VK_FALSE;
+	color_blending_state_create_info.logicOp = VK_LOGIC_OP_COPY;
+	color_blending_state_create_info.attachmentCount = 1;
+	color_blending_state_create_info.pAttachments = &color_blend_attachment;
+	color_blending_state_create_info.blendConstants[0] = 0.0f;
+	color_blending_state_create_info.blendConstants[1] = 0.0f;
+	color_blending_state_create_info.blendConstants[2] = 0.0f;
+	color_blending_state_create_info.blendConstants[3] = 0.0f;
+	
+	//pipeline layout
+	//用来指定uniforms
+	VkPipelineLayoutCreateInfo pipeline_create_info{};
+	pipeline_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipeline_create_info.setLayoutCount = 0;
+	pipeline_create_info.pSetLayouts = nullptr;
+	pipeline_create_info.pushConstantRangeCount = 0;
+	pipeline_create_info.pPushConstantRanges = nullptr;
+	if (vkCreatePipelineLayout(m_device, &pipeline_create_info, nullptr, &m_pipeline_layout)
+		!= VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to create pipeline layout!");
+	}
+
+
+	vkDestroyShaderModule(m_device, vert_shader_module, nullptr);
+	vkDestroyShaderModule(m_device, frag_shader_module, nullptr);
+}
+
+
+VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code)
+{
+	VkShaderModuleCreateInfo create_info{};
+	memset(&create_info, 0, sizeof(VkShaderModuleCreateInfo));
+	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	create_info.codeSize = code.size();
+
+	/*
+	这里有一个细节需要注意：
+	SPIR-V的shader module规范下都是32-bit流，原因是出于跨平台的考虑：
+		有一些机器可能不支持没有对齐到一个word（32bit）的以字节为单位的随机内存访问
+	因此这里的pCode是uint32_t类型的指针。
+	正常来说我们既然申请的是unsigned char流，那么应该保证第一位的地址对齐到4bytes；然而
+	C++保证new（std::vector默认的allocate行为)得到的地址一定是对齐到最大基础类型
+	（primitive type）的地址上。大多数机器上无论如何最大基础类型的大小都是大于或者等于32bit，
+	因此这里直接reinterpret_cast没有问题。
+	*/
+	create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
+	VkShaderModule _shader_module;
+	if (vkCreateShaderModule(m_device, &create_info, nullptr, &_shader_module) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to create shader module!");
+	}
+	
+	return _shader_module;
 }
 
 
